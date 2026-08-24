@@ -136,6 +136,22 @@ else
 	ok 'test-theme activated'
 fi
 
+# The currency module. Activation is what creates its tables and schedules its
+# syncs, so a bootstrap that stops short of it leaves a site where the plugin is
+# present, the admin pages 404 and nothing has ever run.
+#
+# Guarded rather than unconditional: `wp plugin activate` on an already-active
+# plugin is a warning and a non-zero exit, which would fail the `set -e` above on
+# every re-run and make the script anything but idempotent.
+if wp plugin is-active currency-converter 2>/dev/null; then
+	ok 'currency-converter already active'
+elif [ -f web/app/plugins/currency-converter/currency-converter.php ]; then
+	wp plugin activate currency-converter >/dev/null
+	ok 'currency-converter activated'
+else
+	warn 'currency-converter not present — skipping activation'
+fi
+
 # ------------------------------------------------------------ config checks ---
 # Config::apply() only defines constants at runtime, so `wp config get` cannot
 # see them. Asserting through `wp eval` proves the config actually loaded.
