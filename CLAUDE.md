@@ -61,3 +61,27 @@ suffix, `siteurl` does. Any tool that assumes stock paths will 404.
 - **Lint covers our code only.** `config/`, `web/index.php` and `web/wp-config.php` are Bedrock
   scaffolding in upstream style; running `phpcbf` over them rewrites them into something Bedrock
   does not look like.
+
+## Task constraints — currency module
+
+Non-negotiable, and each one is here because getting it wrong is expensive. Full brief in
+`docs/REQUIREMENTS.md`, invariants and non-goals in `.claude/agents/_TASK_CONTRACT.md`, API
+details in the `freecurrencyapi` skill.
+
+- **`everapihq/freecurrencyapi-php`, and any SDK for this API, are forbidden.** The brief bans them
+  by name. Gate before delivery:
+  `grep -rn everapihq composer.json composer.lock vendor/ web/app/plugins/` → nothing.
+- **The plugin has no Composer runtime dependencies and carries its own PSR-4 autoloader.** It
+  ships as a zip onto someone else's site, where this project's `vendor/` does not exist. Dev
+  tooling in the root `composer.json` is fine; a runtime `require` is not.
+- **Bind rates as `%s`, never `%f`.** `%f` is locale-formatted and lossy against `DECIMAL(20,10)`.
+- **The API key travels as an HTTP header**, never a query parameter — query strings land in access
+  logs and proxy caches.
+- **Quota is 5000/month.** Develop against fixtures
+  (`.claude/skills/freecurrencyapi/references/response-fixtures.md`); hit the live API only when
+  the request itself is what is being tested.
+- **Options holding secrets use `autoload='no'`** — otherwise the key is in every page load's
+  `alloptions` cache.
+- **The rate map is memoised per request.** One query per request, not one per `convert()` call.
+- **The upsert is a single multi-row `INSERT ... ON DUPLICATE KEY UPDATE`**, not `$wpdb->replace()`
+  in a loop — replace is a delete plus an insert, so it churns primary keys 33 times a day.
