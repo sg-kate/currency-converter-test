@@ -12,6 +12,7 @@
 # under it to apply.
 /web/app/plugins/*
 !/web/app/plugins/.gitkeep
+!/web/app/plugins/currency-converter/
 /web/app/mu-plugins/*
 !/web/app/mu-plugins/.gitkeep
 !/web/app/mu-plugins/bedrock-autoloader.php

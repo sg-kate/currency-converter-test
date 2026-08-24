@@ -1,0 +1,92 @@
+/**
+ * Admin styling for the currency screens.
+ *
+ * Small on purpose. The screens are built from core admin components — `wrap`, `card`,
+ * `widefat striped`, `notice inline`, `description` — so they inherit the admin colour
+ * scheme, the dark mode a site may be using, and every future change to it. What is here is
+ * only what core has no class for.
+ *
+ * @package Currency_Converter
+ */
+
+.currency-converter-rates .cc-summary {
+	margin: 1em 0;
+}
+
+.currency-converter-rates .cc-summary-age {
+	color: #646970;
+}
+
+/* Rates and the symbols beside currency names are data: aligned and monospaced so that
+   columns of digits can be compared down the page rather than read one at a time. */
+.currency-converter-rates .cc-rate {
+	font-family: Consolas, Monaco, monospace;
+}
+
+.currency-converter-rates .column-rate {
+	text-align: right;
+}
+
+.currency-converter-rates .cc-symbol {
+	color: #646970;
+}
+
+.cc-widget {
+	max-width: none;
+	margin: 1em 0;
+	padding: 0.5em 1.5em 1em;
+}
+
+.cc-widget-form {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 0.5em;
+}
+
+.cc-widget-form label {
+	margin-left: 0.5em;
+	font-weight: 600;
+}
+
+.cc-widget-form label:first-child {
+	margin-left: 0;
+}
+
+/* The result takes a whole row of the flex container, so a long error message wraps under
+   the controls instead of stretching them. */
+.cc-widget-result {
+	flex-basis: 100%;
+	margin: 0.5em 0 0;
+	min-height: 1.5em;
+	font-size: 1.1em;
+}
+
+.cc-widget-result.cc-ok {
+	font-weight: 600;
+}
+
+.cc-widget-result.cc-error {
+	color: #b32d2e;
+}
+
+.cc-widget-result.cc-working {
+	color: #646970;
+}
+
+.cc-status {
+	max-width: 50em;
+	margin-bottom: 1.5em;
+}
+
+.cc-status th {
+	width: 14em;
+}
+
+.cc-action {
+	margin: 0 0 1em;
+}
+
+.cc-action .description {
+	margin-left: 0.5em;
+}

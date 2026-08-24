@@ -1,0 +1,40 @@
+{
+	"$schema": "https://schemas.wp.org/trunk/block.json",
+	"apiVersion": 2,
+	"name": "currency-converter/rates",
+	"title": "Currency Rates",
+	"category": "widgets",
+	"icon": "chart-line",
+	"description": "Show the stored exchange rates and convert an amount between currencies.",
+	"keywords": [ "currency", "exchange", "rate", "convert", "money" ],
+	"textdomain": "currency-converter",
+	"supports": {
+		"html": false,
+		"align": [ "wide", "full" ]
+	},
+	"attributes": {
+		"base": {
+			"type": "string",
+			"default": "USD"
+		},
+		"showConverter": {
+			"type": "boolean",
+			"default": true
+		},
+		"showTable": {
+			"type": "boolean",
+			"default": true
+		},
+		"showUpdated": {
+			"type": "boolean",
+			"default": true
+		},
+		"limit": {
+			"type": "number",
+			"default": 0
+		}
+	},
+	"editorScript": "currency-converter-block-editor",
+	"script": "currency-converter-block-view",
+	"style": "currency-converter-block"
+}

@@ -1,0 +1,110 @@
+/**
+ * Styles for the `currency-converter/rates` block, shared by the editor and the front end.
+ *
+ * Deliberately restrained: colours come from the theme through `currentColor` and inherited
+ * backgrounds rather than being chosen here, so the block sits inside a dark theme as
+ * readily as a light one without a second stylesheet.
+ *
+ * @package Currency_Converter
+ */
+
+.currency-rates-block {
+	margin-block: 1.5em;
+}
+
+/* Converter ------------------------------------------------------------- */
+
+.currency-rates-block__converter {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.75em 1em;
+	align-items: flex-end;
+	margin-bottom: 1.25em;
+}
+
+.currency-rates-block__field {
+	display: flex;
+	flex-direction: column;
+	gap: 0.25em;
+	flex: 1 1 8em;
+	min-width: 0;
+}
+
+.currency-rates-block__field label {
+	font-size: 0.8em;
+	letter-spacing: 0.03em;
+	text-transform: uppercase;
+	opacity: 0.7;
+}
+
+.currency-rates-block__field input,
+.currency-rates-block__field select {
+	width: 100%;
+	max-width: 100%;
+	padding: 0.45em 0.6em;
+	font: inherit;
+	color: inherit;
+	background-color: transparent;
+	border: 1px solid currentColor;
+	border-radius: 4px;
+}
+
+/* The result is the reason the block exists, so it is the loudest thing in it. */
+.currency-rates-block__result {
+	flex: 1 0 100%;
+	margin: 0;
+	font-size: 1.35em;
+	font-weight: 600;
+	line-height: 1.3;
+	min-height: 1.3em;
+}
+
+/* Table ----------------------------------------------------------------- */
+
+.currency-rates-block__table {
+	width: 100%;
+	border-collapse: collapse;
+	font-variant-numeric: tabular-nums;
+}
+
+.currency-rates-block__table th,
+.currency-rates-block__table td {
+	padding: 0.4em 0.6em;
+	text-align: left;
+	border-bottom: 1px solid currentColor;
+}
+
+.currency-rates-block__table thead th {
+	font-size: 0.8em;
+	letter-spacing: 0.03em;
+	text-transform: uppercase;
+	opacity: 0.7;
+}
+
+.currency-rates-block__table tbody th {
+	font-weight: 600;
+	white-space: nowrap;
+}
+
+.currency-rates-block__value {
+	text-align: right;
+	white-space: nowrap;
+}
+
+/* Meta ------------------------------------------------------------------ */
+
+.currency-rates-block__meta,
+.currency-rates-block__empty {
+	margin-top: 0.75em;
+	font-size: 0.85em;
+	opacity: 0.75;
+}
+
+/* Narrow screens: the table is the thing that overflows, so let it scroll
+   inside the block rather than widening the page. */
+@media (max-width: 480px) {
+	.currency-rates-block__table {
+		display: block;
+		overflow-x: auto;
+	}
+}

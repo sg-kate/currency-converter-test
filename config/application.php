@@ -95,6 +95,18 @@ Config::define('WP_DEFAULT_THEME', 'test-theme');
 Config::define('DISABLE_WP_CRON', env('DISABLE_WP_CRON') ?: true);
 
 /**
+ * Third-party services.
+ *
+ * The freecurrencyapi.com key. Empty rather than null when unset, so the currency
+ * module can test it with a plain empty check. Never committed: the value lives in
+ * .env only. Note that `wp config get` cannot see this — Config::apply() defines it
+ * at runtime — so check it with:
+ *
+ *   bin/wp eval 'echo defined( "FREECURRENCYAPI_KEY" ) ? "set" : "MISSING";'
+ */
+Config::define('FREECURRENCYAPI_KEY', env('FREECURRENCYAPI_KEY') ?: '');
+
+/**
  * Debugging is off by default; the development environment turns it on.
  */
 Config::define('WP_DEBUG', false);
