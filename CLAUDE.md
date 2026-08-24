@@ -33,7 +33,7 @@ bin/wp <command>        # WP-CLI in the wpcli container
 bin/composer <command>  # Composer as the host user
 ```
 
-## Traps — all three cost us time, none is in any documentation
+## Traps — all four cost us time, none is in any documentation
 
 **1. `wp config get` cannot see the configuration.** `Roots\WPConfig\Config::apply()` defines
 constants at runtime; `wp config get` parses `wp-config.php` statically and finds nothing. Always
@@ -48,6 +48,13 @@ compare `php -m` across them.
 **3. Bedrock paths are not the usual ones.** Login is `/wp/wp-login.php`, the admin is
 `/wp/wp-admin`, and content is served from `/app`, not `/wp-content`. `home` has no `/wp`
 suffix, `siteurl` does. Any tool that assumes stock paths will 404.
+
+**4. `wp plugin uninstall` deletes the plugin's source.** `web/app/plugins/currency-converter/`
+is hand-written source in the working tree, not Composer output — nothing can reinstall it, and
+it is untracked, so git cannot restore it either. The R4 acceptance check in
+`docs/REQUIREMENTS.md` once ran the bare command and destroyed the entire module; it was
+rebuilt only because `~/.claude/projects/` still held the session logs. Snapshot before, restore
+after — `docs/REQUIREMENTS.md` carries the exact form. The same applies to `wp plugin delete`.
 
 ## Rules
 
@@ -74,7 +81,7 @@ details in the `freecurrencyapi` skill.
 - **The plugin has no Composer runtime dependencies and carries its own PSR-4 autoloader.** It
   ships as a zip onto someone else's site, where this project's `vendor/` does not exist. Dev
   tooling in the root `composer.json` is fine; a runtime `require` is not.
-- **Bind rates as `%s`, never `%f`.** `%f` is locale-formatted and lossy against `DECIMAL(20,10)`.
+- **Bind rates as `%s`, never `%f`.** `%f` is locale-formatted and lossy against `DECIMAL(24,12)`.
 - **The API key travels as an HTTP header**, never a query parameter — query strings land in access
   logs and proxy caches.
 - **Quota is 5000/month.** Develop against fixtures

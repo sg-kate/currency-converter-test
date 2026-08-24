@@ -31,9 +31,14 @@ falsifies it.
 3. **Rates come from `https://api.freecurrencyapi.com/v1/latest`, in one request, with no
    `currencies` filter** — that is what "all available currencies" means on this plan. (R3)
 
-4. **Rates are stored in a database table**, `{$wpdb->prefix}currency_rates`, created with
-   `dbDelta()`, `DECIMAL(20,10)`, unique on `(base_code, target_code)`. Not a transient, not an
-   option, not a JSON file. (R4)
+4. **Rates are stored in a database table**, `{$wpdb->prefix}cc_rates`, created with `dbDelta()`,
+   `DECIMAL(24,12)`, unique on `(base_code, target_code)`. Not a transient, not an option, not a
+   JSON file. A second table, `{$wpdb->prefix}cc_currencies`, holds the display metadata
+   `/v1/currencies` returns — `name`, `symbol`, `decimal_digits`. It describes currencies; it does
+   not decide which exist, and invariant 2 is untouched by it. (R4)
+
+   *Amended before any code was written, not to match code that drifted: the table names and the
+   scale come from the phase B prompt, and the metadata has no column to live in on a rates table.*
 
 5. **The sync runs once a day and is bounded at once a day.** `wp_schedule_event()` on the `daily`
    recurrence under the hook `currency_converter_update_rates`, plus a freshness window that skips
@@ -79,7 +84,13 @@ costs review time on code nobody requested.
 - **No admin CRUD for the currency list.** Invariant 2 settled this: the hardcoded constant is the
   single source of truth. A second source in the database would drift from it, and
   `DISALLOW_FILE_MODS` reflects the same principle everywhere but development.
-- **No shortcode, block, widget, or front-end display.** The brief names one page, in the admin.
+- **No block, widget, or front-end display.** The brief names one page, in the admin.
+
+  *Amended 2026-08-24: `[currency_convert]` was asked for explicitly, after this non-goal was
+  cited against it, so it is built. Its scope is fixed at what the request was — proof that the
+  service works outside wp-admin, in about twenty lines: three attributes, one `convert()` call,
+  no formatting options and no template. The rest of the bullet stands, and this is not a licence
+  for the block, the widget or the display it used to exclude.*
 - **No multi-currency pricing, cart, or checkout integration.** The module converts numbers. What
   calls it is not this task.
 - **No caching layer beyond the table.** The table *is* the cache — that is what "stored in the

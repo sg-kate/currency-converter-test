@@ -29,7 +29,7 @@ in both; and Bedrock's admin lives at `/wp/wp-admin`, not `/wp-admin`.
 | Plugin directory | `web/app/plugins/currency-converter/` |
 | Plugin slug | `currency-converter` |
 | PHP namespace | `Drozd\Currency\` |
-| Database table | `{$wpdb->prefix}currency_rates` (`wp_currency_rates` with the default `DB_PREFIX`) |
+| Database tables | `{$wpdb->prefix}cc_rates` and `{$wpdb->prefix}cc_currencies` (`wp_cc_rates`, `wp_cc_currencies` with the default `DB_PREFIX`) |
 | Cron hook | `currency_converter_update_rates` |
 | Admin page slug | `currency-rates` |
 | WP-CLI namespace | `wp currency` |
@@ -166,17 +166,25 @@ bin/wp eval 'define( "FREECURRENCYAPI_KEY", "nope" ); ' ; bin/wp currency update
 **Acceptance**
 
 ```bash
-docker compose exec -T db sh -c 'mariadb -u"$MARIADB_USER" -p"$MARIADB_PASSWORD" "$MARIADB_DATABASE" -N -e "DESCRIBE wp_currency_rates"'
+docker compose exec -T db sh -c 'mariadb -u"$MARIADB_USER" -p"$MARIADB_PASSWORD" "$MARIADB_DATABASE" -N -e "DESCRIBE wp_cc_rates"'
 # expected columns, in order:
 # id            bigint(20) unsigned  PRI  auto_increment
 # base_code     char(3)
 # target_code   char(3)
-# rate          decimal(20,10)
+# rate          decimal(24,12)
 # fetched_at    datetime
 # UNIQUE KEY base_target (base_code, target_code)
 
+docker compose exec -T db sh -c 'mariadb -u"$MARIADB_USER" -p"$MARIADB_PASSWORD" "$MARIADB_DATABASE" -N -e "DESCRIBE wp_cc_currencies"'
+# expected columns, in order:
+# code             char(3)  PRI
+# name             varchar(64)
+# symbol           varchar(8)
+# decimal_digits   tinyint(3) unsigned
+# updated_at       datetime
+
 bin/wp currency update --force
-docker compose exec -T db sh -c 'mariadb -u"$MARIADB_USER" -p"$MARIADB_PASSWORD" "$MARIADB_DATABASE" -N -e "SELECT COUNT(*) FROM wp_currency_rates"'
+docker compose exec -T db sh -c 'mariadb -u"$MARIADB_USER" -p"$MARIADB_PASSWORD" "$MARIADB_DATABASE" -N -e "SELECT COUNT(*) FROM wp_cc_rates"'
 # expected: 33
 ```
 
@@ -184,29 +192,57 @@ Storage is idempotent — a second update replaces rows rather than appending, e
 unique key:
 
 ```bash
-bin/wp currency update --force && docker compose exec -T db sh -c 'mariadb -u"$MARIADB_USER" -p"$MARIADB_PASSWORD" "$MARIADB_DATABASE" -N -e "SELECT COUNT(*) FROM wp_currency_rates"'
+bin/wp currency update --force && docker compose exec -T db sh -c 'mariadb -u"$MARIADB_USER" -p"$MARIADB_PASSWORD" "$MARIADB_DATABASE" -N -e "SELECT COUNT(*) FROM wp_cc_rates"'
 # expected: 33 (unchanged)
 ```
 
-Deactivation must keep the data and uninstall must remove it:
+Deactivation must keep the data and uninstall must remove it.
+
+> **`wp plugin uninstall` deletes the plugin's files from disk.** This plugin's source lives
+> in the working tree and is not Composer output, so the bare command destroys the
+> deliverable — and has done once already, taking the whole module with it. Run the check
+> only in the snapshot-and-restore form below, and never `wp plugin uninstall` on its own.
 
 ```bash
-bin/wp plugin uninstall currency-converter --deactivate
-docker compose exec -T db sh -c 'mariadb -u"$MARIADB_USER" -p"$MARIADB_PASSWORD" "$MARIADB_DATABASE" -N -e "SHOW TABLES LIKE \"wp_currency_rates\""'
+# Snapshot the source first. `wp plugin uninstall` deletes the directory, and unlike
+# web/wp or vendor/ nothing can reinstall it.
+tar -C web/app/plugins -cf /tmp/cc-src.tar currency-converter
+
+# Deactivation alone must KEEP the data.
+bin/wp plugin deactivate currency-converter
+docker compose exec -T db sh -c 'mariadb -u"$MARIADB_USER" -p"$MARIADB_PASSWORD" "$MARIADB_DATABASE" -N -e "SHOW TABLES LIKE \"wp_cc_%\""'
+# expected: wp_cc_currencies and wp_cc_rates — both still present
+
+# Uninstall must REMOVE it.
+bin/wp plugin uninstall currency-converter
+docker compose exec -T db sh -c 'mariadb -u"$MARIADB_USER" -p"$MARIADB_PASSWORD" "$MARIADB_DATABASE" -N -e "SHOW TABLES LIKE \"wp_cc_%\""'
 # expected: no output
+
+# Put the source back and return the site to a working state.
+tar -C web/app/plugins -xf /tmp/cc-src.tar && rm -f /tmp/cc-src.tar
+bin/wp plugin activate currency-converter
 ```
 
 **Where**
 
 | Path | Role |
 | --- | --- |
-| `web/app/plugins/currency-converter/src/Repository/RateRepository.php` | `dbDelta()` schema, `upsert()`, `all()`, `find()` |
-| `web/app/plugins/currency-converter/src/Plugin.php` | `register_activation_hook` → schema install |
+| `web/app/plugins/currency-converter/src/Db/Schema.php` | `dbDelta()` DDL for both tables, `install()`, `maybe_upgrade()`, `drop()` |
+| `web/app/plugins/currency-converter/src/Db/WpdbRateRepository.php` | `upsert()`, `all()`, `find()` |
+| `web/app/plugins/currency-converter/src/Plugin.php` | `register_activation_hook` → `Schema::install()` |
 | `web/app/plugins/currency-converter/uninstall.php` | `DROP TABLE`, delete options |
 
 `dbDelta()` is why the stack runs MariaDB rather than MySQL 8 — see the comment in
-`docker-compose.yml`; `bigint(20)` in the DDL has to match what `DESCRIBE` reports or every
-activation emits a pointless `ALTER`.
+`docker-compose.yml`; `bigint(20)` and `tinyint(3)` in the DDL have to match what `DESCRIBE`
+reports or every activation emits a pointless `ALTER`.
+
+**Two tables, not one, and `decimal(24,12)`, not `decimal(20,10)`.** Decided before any code was
+written, not drifted into: `cc_currencies` holds the display metadata `/v1/currencies` returns
+(`name`, `symbol`, `decimal_digits` — JPY is 0, not 2, and rounding for display needs it), which
+has no column to live in on a rates table. The wider scale costs nothing at 33 rows and keeps a
+stored rate exact against the twelve decimal places the runbook pins for `USD → USD`. Invariant 2
+is unaffected: `Currencies::CODES` remains the source of truth for *which* codes exist;
+`cc_currencies` describes them, and never decides membership.
 
 ---
 
@@ -509,7 +545,7 @@ to spare.
 **Verification**
 
 ```bash
-docker compose exec -T db sh -c 'mariadb -u"$MARIADB_USER" -p"$MARIADB_PASSWORD" "$MARIADB_DATABASE" -N -e "SELECT DISTINCT base_code FROM wp_currency_rates"'
+docker compose exec -T db sh -c 'mariadb -u"$MARIADB_USER" -p"$MARIADB_PASSWORD" "$MARIADB_DATABASE" -N -e "SELECT DISTINCT base_code FROM wp_cc_rates"'
 # expected: USD — one row, confirming the single-base design is what is stored
 
 bin/wp eval 'echo ( new Drozd\Currency\Api\Client() )->probe_base( "EUR" );'
@@ -541,8 +577,8 @@ file.
 **Verification**
 
 ```bash
-bin/wp currency list --format=count
-docker compose exec -T db sh -c 'mariadb -u"$MARIADB_USER" -p"$MARIADB_PASSWORD" "$MARIADB_DATABASE" -N -e "SELECT COUNT(*) FROM wp_currency_rates"'
+bin/wp currency rates list --format=count
+docker compose exec -T db sh -c 'mariadb -u"$MARIADB_USER" -p"$MARIADB_PASSWORD" "$MARIADB_DATABASE" -N -e "SELECT COUNT(*) FROM wp_cc_rates"'
 # expected: the two numbers are equal, and both equal the "N items" in docs/screenshots/currency-rates.png
 ```
 
@@ -653,7 +689,7 @@ Note that `CLAUDE.md` still names `bcmath` as the CLI-only extension. That was t
 written and is now stale: `bcmath` was added to the `Dockerfile` and is in both. The trap is real;
 its example has moved.
 
-**Resolution:** No new extension, and no `intl`. Rates are stored as `DECIMAL(20,10)` so the
+**Resolution:** No new extension, and no `intl`. Rates are stored as `DECIMAL(24,12)` so the
 database keeps full precision; `Converter::convert()` returns a float, as the brief's signature
 requires, and rounding happens once at the presentation edge via `round()` at the currency's
 minor-unit scale — accurate far beyond the four to six significant digits an FX rate carries.
@@ -748,7 +784,7 @@ git check-ignore -q .env && echo ignored
 | 1 | Module for storing and converting currencies | Planned | `web/app/plugins/currency-converter/` |
 | 2 | Predefined list of currencies | Planned | `src/Currencies.php` |
 | 3 | Rates downloaded for all available currencies | Planned | `src/Api/Client.php` |
-| 4 | Rates stored in the database | Planned | `src/Repository/RateRepository.php` |
+| 4 | Rates stored in the database | Planned | `src/Db/Schema.php` |
 | 5 | Updated once a day | Planned | `src/Cron/DailySync.php` + `cron` container |
 | 6 | Conversion service | Planned | `src/Converter.php` |
 | 7 | Admin page with all saved rates | Planned | `src/Admin/RatesListTable.php` |
