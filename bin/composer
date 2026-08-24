@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# Composer inside the stack: `bin/composer install`, `bin/composer require ...`.
+# Runs as the host user so vendor/ and web/wp are not left owned by root.
+set -euo pipefail
+
+cd "$(dirname "${BASH_SOURCE[0]}")/.."
+
+tty_flag=(-T)
+if [ -t 0 ] && [ -t 1 ]; then
+	tty_flag=()
+fi
+
+exec docker compose run --rm "${tty_flag[@]}" \
+	--user "$(id -u):$(id -g)" \
+	-e COMPOSER_HOME=/tmp/composer \
+	composer composer "$@"

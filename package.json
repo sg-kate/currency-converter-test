@@ -1,0 +1,12 @@
+{
+  "name": "test-project",
+  "private": true,
+  "description": "Tooling that runs on the host: screenshot capture for the WordPress admin.",
+  "type": "module",
+  "scripts": {
+    "screenshots": "node .claude/skills/browser-capture/scripts/capture.mjs"
+  },
+  "devDependencies": {
+    "playwright": "^1.47.0"
+  }
+}

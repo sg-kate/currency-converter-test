@@ -1,11 +1,12 @@
-# WordPress development stack
+# WordPress development environment
 
-A clean WordPress site running in Docker. Nothing project-specific — a base to
-build on.
+A Bedrock-style WordPress project running in Docker: Composer owns core, plugins
+and themes, configuration lives in `config/`, and the document root is `web/`.
 
 ## Requirements
 
-Docker with Compose v2. Nothing else — no PHP, no Composer, no local WordPress.
+Docker with Compose v2. Nothing else — PHP, Composer and WP-CLI all run in
+containers.
 
 ## Getting started
 
@@ -14,80 +15,106 @@ cp .env.example .env
 make bootstrap
 ```
 
-`make bootstrap` starts the containers, installs WordPress, verifies the runtime
-configuration and prints the URL and credentials. It is idempotent: running it
-again changes nothing.
+`make bootstrap` installs dependencies, starts the containers, installs
+WordPress, verifies the configuration and prints the URL and credentials. It is
+idempotent: running it again changes nothing.
 
 | | |
 |---|---|
 | Site | http://localhost:8080 |
-| Admin | http://localhost:8080/wp-admin |
+| Admin | http://localhost:8080/wp/wp-admin |
 | User / password | `admin` / `admin` (from `.env`) |
+
+## Layout
+
+```
+config/
+  application.php              base configuration for every environment
+  environments/development.php  overrides for WP_ENV=development
+docker/
+  config/apache/               vhost: document root, access rules
+  config/php/                  php.ini
+web/                           document root
+  index.php  wp-config.php  .htaccess
+  wp/                          WordPress core — Composer, gitignored
+  app/                         wp-content, renamed
+    themes/test-theme/         our theme
+    mu-plugins/  plugins/  uploads/
+bin/                           bootstrap, reset, wp, composer wrappers
+```
+
+Only our own code is under version control. `web/wp`, `vendor/` and everything
+Composer installs into `web/app` are ignored and rebuilt by `make bootstrap`.
 
 ## Everyday commands
 
 ```bash
-make help              # list all targets
-make up                # start containers without reinstalling
-make down              # stop containers, keep the data
-make reset             # destroy everything and bootstrap from scratch
-make ps                # container status
-make logs S=cron       # follow one service's logs
-make db                # MariaDB shell
+make help                     # list all targets
+make up                       # start containers without reinstalling
+make down                     # stop containers, keep the data
+make reset                    # destroy the database and dependencies, rebuild
+make build                    # rebuild the application image
+make logs S=cron              # follow one service's logs
+make db                       # MariaDB shell
+make lint                     # coding standards
+make lint-fix                 # fix what can be fixed automatically
 
-bin/wp plugin list     # WP-CLI inside the stack
-bin/wp cron event list
+bin/wp plugin list            # WP-CLI inside the stack
+bin/composer require ...      # Composer inside the stack
 ```
 
-## How it fits together
+## Services
 
 | Service | Image | Role |
 |---|---|---|
-| `db` | `mariadb:10.11` | database, with a healthcheck the other services wait on |
-| `wordpress` | `wordpress:php8.3-apache` | the site, serving `./wordpress` |
-| `wpcli` | `wordpress:cli-php8.3` | one-shot WP-CLI runner behind `bin/wp` |
+| `db` | `mariadb:10.11` | database, with a healthcheck the others wait on |
+| `app` | built from `Dockerfile` | PHP 8.3 + Apache serving `web/` |
+| `composer` | `composer:2` | on-demand dependency management behind `bin/composer` |
+| `wpcli` | `wordpress:cli-php8.3` | on-demand WP-CLI behind `bin/wp` |
 | `cron` | `wordpress:cli-php8.3` | runs due cron events every 60s |
 
-The core is not downloaded by hand: the official image ships it and unpacks it into
-`./wordpress` on first start, so the version is pinned by the image tag. It lives on
-disk rather than in a volume so an editor can index it — useful when writing against
-core APIs.
+`app` is built rather than pulled because core no longer comes from an image: the
+official `wordpress` image ships its own copy of WordPress, which would collide
+with the one Composer installs into `web/wp`.
 
-`./wordpress` is gitignored and **disposable**: `make reset` deletes it. Keep source
-you care about outside it, or in version control.
+## How configuration works
 
-**MariaDB rather than MySQL** is deliberate. MySQL 8.0.19+ removed integer display
-width, so `bigint(20)` in a schema definition no longer matches the `bigint` that
-`DESCRIBE` reports, and WordPress `dbDelta()` then emits an `ALTER` on every plugin
-activation. MariaDB still reports `bigint(20)`.
+`.env` holds environment values. `config/application.php` reads them and defines
+the WordPress constants; `config/environments/{WP_ENV}.php` overrides them per
+environment. `web/wp-config.php` only requires those two files.
 
-**WP-Cron is disabled** (`DISABLE_WP_CRON`) because `wp-cron.php` only fires on page
-loads: on a development site nobody visits, scheduled events would never run at all.
-The `cron` service is the real scheduler.
+Because constants are defined at runtime through `Roots\WPConfig\Config`,
+`wp config get` cannot see them — it parses the file statically. Use
+`bin/wp eval 'var_dump( WP_DEBUG );'` instead. `make bootstrap` asserts the
+important ones this way.
 
-## Configuration
+Keys and salts are **not** in `.env.example`. `bin/bootstrap.sh` generates eight
+unique values into `.env` on first run, so no two checkouts share secrets.
 
-Everything lives in `.env` (gitignored; `.env.example` is the template). Quote any
-value containing spaces — the file is read both by Docker Compose and by
-`bin/bootstrap.sh`.
+### Notable defaults
 
-Constants such as `WP_HOME` and `DISABLE_WP_CRON` are passed through
-`WORDPRESS_CONFIG_EXTRA`. The image's `wp-config.php` reads that variable **at
-runtime** and `eval()`s it, which has two consequences:
-
-- Changing `.env` takes effect after `make down && make up` — no reset needed.
-- Every container running WordPress code needs that environment block, not just
-  Apache. It is shared through a YAML anchor in `docker-compose.yml`; without it
-  `bin/wp` would run with those constants undefined. `make bootstrap` asserts this.
-
-`wp config get` cannot see these constants, since it parses `wp-config.php`
-statically. Use `bin/wp eval 'var_dump( DISABLE_WP_CRON );'` instead.
+- **WP-Cron is disabled** and the `cron` service runs due events every 60s.
+  `wp-cron.php` only fires on page loads, so on a site nobody visits scheduled
+  events would never run at all.
+- **`DISALLOW_FILE_MODS`** is on everywhere except development: Composer owns
+  plugins and themes, so an admin-side install would be reverted by the next
+  deploy. Locally it is relaxed so `wp plugin install` still works.
+- **MariaDB rather than MySQL.** MySQL 8.0.19+ removed integer display width, so
+  `bigint(20)` in a schema definition no longer matches the `bigint` that
+  `DESCRIBE` reports, and `dbDelta()` then emits an `ALTER` on every plugin
+  activation. MariaDB still reports `bigint(20)`.
 
 ## Troubleshooting
 
-**Port 8080 taken** — set `HTTP_PORT` in `.env`, then `make down && make bootstrap`.
+**Port 8080 taken** — set `HTTP_PORT` in `.env` (`WP_HOME` follows it), then
+`make down && make bootstrap`.
 
-**Site unreachable after changing `HTTP_PORT`** — `WP_HOME` in the database still
-points at the old port. `make bootstrap` warns about this; `make reset` fixes it.
+**Site unreachable after changing `HTTP_PORT`** — the URLs stored in the database
+still point at the old port. `make reset` fixes it, or update them with
+`bin/wp option update home ...` and `siteurl`.
 
-**Fresh start** — `make reset` drops the database and empties `./wordpress`.
+**404 on every page but the homepage** — `web/.htaccess` is missing or
+`AllowOverride` is off. The file is under version control; restore it.
+
+**Fresh start** — `make reset` drops the database, `web/wp` and `vendor/`.
+`web/app` is left alone, so your themes and uploads survive.

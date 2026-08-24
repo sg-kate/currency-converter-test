@@ -1,0 +1,13 @@
+# WordPress rewrites requests for pretty permalinks to index.php. Core writes
+# this block itself when it can, but with Composer-managed core the docroot is
+# not writable in every environment, so it is kept under version control.
+# BEGIN WordPress
+<IfModule mod_rewrite.c>
+RewriteEngine On
+RewriteBase /
+RewriteRule ^index\.php$ - [L]
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule . /index.php [L]
+</IfModule>
+# END WordPress

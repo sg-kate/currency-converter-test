@@ -1,13 +1,32 @@
-# Local configuration — never commit, it holds credentials and the API key.
+# Local configuration — never commit, it holds credentials and salts.
 .env
 
-# WordPress installation, bind-mounted for readability. Unpacked from the image on
-# first start and wiped by `make reset` — it is disposable, keep no source here.
-/wordpress/
+# Composer installs WordPress core here.
+/web/wp/
 
-# Dependencies (installed, not vendored).
-vendor/
+# Composer dependencies.
+/vendor/
+
+# Content directory: everything is installed by Composer except our own code,
+# which is re-opened below. Each level has to be re-opened for the negation
+# under it to apply.
+/web/app/plugins/*
+!/web/app/plugins/.gitkeep
+/web/app/mu-plugins/*
+!/web/app/mu-plugins/.gitkeep
+!/web/app/mu-plugins/bedrock-autoloader.php
+/web/app/themes/*
+!/web/app/themes/test-theme/
+/web/app/uploads/*
+!/web/app/uploads/.gitkeep
+/web/app/upgrade/
+/web/app/*.log
+
+# Front-end build artefacts.
 node_modules/
 
 # OS noise.
 .DS_Store
+
+# PHPUnit result cache.
+/.phpunit.cache/

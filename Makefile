@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help bootstrap up down reset ps logs db wp
+.PHONY: help bootstrap up down reset build ps logs db wp composer test lint lint-fix screenshots
 
 ## Show this help
 help:
@@ -7,18 +7,21 @@ help:
 		/^[a-zA-Z_-]+:.*?##/ { printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2 } \
 		END { printf "\n" }' $(MAKEFILE_LIST)
 
-bootstrap: ## Bring the stack up and install WordPress (idempotent)
+bootstrap: ## Install dependencies, start the stack, install WordPress (idempotent)
 	@./bin/bootstrap.sh
 
 up: ## Start containers without touching the installation
 	@docker compose up -d --wait db
-	@docker compose up -d wordpress cron
+	@docker compose up -d app cron
 
 down: ## Stop containers, keep the data
 	@docker compose down
 
-reset: ## Destroy volumes and bootstrap from scratch
+reset: ## Destroy the database and dependencies, then bootstrap from scratch
 	@./bin/reset.sh
+
+build: ## Rebuild the application image
+	@docker compose build app
 
 ps: ## Show container status
 	@docker compose ps
@@ -31,3 +34,18 @@ db: ## Open a MariaDB shell
 
 wp: ## Run WP-CLI: make wp CMD="plugin list"
 	@./bin/wp $(CMD)
+
+composer: ## Run Composer: make composer CMD="require some/package"
+	@./bin/composer $(CMD)
+
+screenshots: ## Capture admin screenshots into docs/screenshots
+	@node .claude/skills/browser-capture/scripts/capture.mjs
+
+test: ## Run PHPUnit inside the app container
+	@docker compose exec -T app vendor/bin/phpunit $(ARGS)
+
+lint: ## Check coding standards
+	@./bin/composer lint
+
+lint-fix: ## Fix what the coding standards can fix automatically
+	@./bin/composer lint:fix

@@ -1,13 +1,11 @@
 #!/usr/bin/env bash
-# Destroys the stack including its volumes, then bootstraps it again.
-# This is the only reliable way to re-apply WORDPRESS_CONFIG_EXTRA, because the
-# official image writes wp-config.php exactly once — when it does not exist yet.
+# Destroys the database and everything Composer installed, then bootstraps again.
 set -euo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
-printf '\033[33m!\033[0m This deletes the database and the ./wordpress directory,\n'
-printf '  including anything you put in wp-content.\n'
+printf '\033[33m!\033[0m This deletes the database, web/wp and vendor/.\n'
+printf '  web/app is left alone, so your themes, plugins and uploads survive.\n'
 if [ -t 0 ] && [ "${FORCE:-}" != "1" ]; then
 	read -r -p '  Continue? [y/N] ' answer
 	case "${answer}" in
@@ -18,15 +16,9 @@ fi
 
 docker compose down -v --remove-orphans
 
-# Core files are written by the container as uid 33, which the host user may not
-# be able to remove — so delete them from inside a container running as root.
-# Only ./wordpress is passed in, so this cannot reach the rest of the repository.
-if [ -d wordpress ]; then
-	docker run --rm --entrypoint sh \
-		-v "$(pwd)/wordpress:/target" \
-		wordpress:cli-php8.3 \
-		-c 'rm -rf /target/..?* /target/.[!.]* /target/*' 2>/dev/null || true
-	printf '\033[32m✓\033[0m ./wordpress emptied\n'
-fi
+# Composer runs as the host user, so these are removable without a helper
+# container — unlike the files a root container would have written.
+rm -rf web/wp vendor
+printf '\033[32m✓\033[0m web/wp and vendor removed\n'
 
 exec ./bin/bootstrap.sh

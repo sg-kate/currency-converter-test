@@ -1,0 +1,24 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(docker compose:*)",
+      "Bash(make:*)",
+      "Bash(./bin/wp:*)",
+      "Bash(./bin/composer:*)",
+      "Bash(npx playwright:*)"
+    ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/php-lint-advisory.sh"
+          }
+        ]
+      }
+    ]
+  }
+}
