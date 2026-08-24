@@ -1,0 +1,1 @@
+{"message":"Unauthorized","error":{"code":"invalid_api_key","message":"Unauthorized"},"actions":{"get_free_api_key":"https://api.freecurrencyapi.com/v1/agent/keys","sign_up":"https://app.freecurrencyapi.com/register?utm_source=api_error&utm_campaign=invalid_api_key","docs":"https://freecurrencyapi.com/docs/openapi.yaml"}}

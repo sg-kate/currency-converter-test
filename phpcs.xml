@@ -11,6 +11,7 @@
 	-->
 	<file>web/app/themes/test-theme</file>
 	<file>web/app/mu-plugins/bedrock-autoloader.php</file>
+	<file>web/app/plugins/currency-converter</file>
 
 	<arg name="extensions" value="php"/>
 	<arg name="colors"/>
@@ -18,6 +19,15 @@
 
 	<rule ref="WordPress-Core"/>
 	<rule ref="WordPress-Docs"/>
+
+	<!--
+		WordPress's own file naming (class-foo-bar.php) and PSR-4 cannot both hold.
+		The plugin ships as a zip with a hand-written PSR-4 autoloader and no Composer
+		runtime dependencies, so the class files must be named for their classes.
+	-->
+	<rule ref="WordPress.Files.FileName">
+		<exclude-pattern>web/app/plugins/currency-converter/src/*</exclude-pattern>
+	</rule>
 
 	<config name="minimum_supported_wp_version" value="6.0"/>
 </ruleset>
