@@ -1,0 +1,91 @@
+# The project name is derived from the directory name.
+
+# The official image's wp-config.php reads these at runtime through getenv_docker()
+# and eval()s WORDPRESS_CONFIG_EXTRA. That means EVERY container running WordPress
+# code needs this block — not just Apache. Without it, `bin/wp` and the cron loop
+# run with DISABLE_WP_CRON and WP_HOME simply undefined. The defines are guarded
+# because WP-CLI loads wp-config.php twice
+# (https://github.com/docker-library/wordpress/issues/588).
+x-wp-env: &wp-env
+  WORDPRESS_DB_HOST: db:3306
+  WORDPRESS_DB_NAME: ${DB_NAME:-wordpress}
+  WORDPRESS_DB_USER: ${DB_USER:-wordpress}
+  WORDPRESS_DB_PASSWORD: ${DB_PASSWORD:-wordpress}
+  WORDPRESS_DEBUG: ${WP_DEBUG:-true}
+  WORDPRESS_CONFIG_EXTRA: |
+    defined( 'WP_HOME' )    || define( 'WP_HOME', 'http://localhost:${HTTP_PORT:-8080}' );
+    defined( 'WP_SITEURL' ) || define( 'WP_SITEURL', 'http://localhost:${HTTP_PORT:-8080}' );
+    defined( 'WP_DEBUG_LOG' )     || define( 'WP_DEBUG_LOG', true );
+    defined( 'WP_DEBUG_DISPLAY' ) || define( 'WP_DEBUG_DISPLAY', false );
+    defined( 'DISABLE_WP_CRON' )  || define( 'DISABLE_WP_CRON', true );
+
+services:
+  # MariaDB, not MySQL, on purpose: MySQL 8.0.19+ dropped integer display width,
+  # so `bigint(20)` in a DDL statement no longer matches the `bigint` reported by
+  # DESCRIBE — which makes WordPress dbDelta() emit an ALTER on every plugin
+  # activation. MariaDB still reports `bigint(20)`. It also has clean arm64 tags.
+  db:
+    image: mariadb:10.11
+    restart: unless-stopped
+    environment:
+      MARIADB_DATABASE: ${DB_NAME:-wordpress}
+      MARIADB_USER: ${DB_USER:-wordpress}
+      MARIADB_PASSWORD: ${DB_PASSWORD:-wordpress}
+      MARIADB_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-root}
+    volumes:
+      - db_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      timeout: 5s
+      retries: 24
+      start_period: 30s
+
+  # Core is bind-mounted to ./wordpress so it is readable on the host and indexable
+  # by an editor. The image unpacks core into it on first start; `make reset` wipes it.
+  wordpress:
+    image: wordpress:php8.3-apache
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "${HTTP_PORT:-8080}:80"
+    environment: *wp-env
+    volumes:
+      - ./wordpress:/var/www/html
+
+  # One-shot WP-CLI runner, invoked through `bin/wp`, never started by `up` —
+  # hence the profile. user 33:33 is required because we bypass the image
+  # entrypoint that would otherwise drop privileges: WP-CLI refuses to run as root.
+  wpcli:
+    image: wordpress:cli-php8.3
+    profiles: ["cli"]
+    user: "33:33"
+    depends_on:
+      db:
+        condition: service_healthy
+    environment: *wp-env
+    volumes:
+      - ./wordpress:/var/www/html
+
+  # WP-Cron is disabled in wp-config.php, so nothing would ever run on a site
+  # nobody visits: wp-cron.php is only triggered by page loads. This loop is the
+  # real scheduler that makes scheduled events actually fire.
+  cron:
+    image: wordpress:cli-php8.3
+    restart: unless-stopped
+    user: "33:33"
+    entrypoint: ["/bin/sh", "/usr/local/bin/cron-loop.sh"]
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      <<: *wp-env
+      CRON_INTERVAL: ${CRON_INTERVAL:-60}
+    volumes:
+      - ./wordpress:/var/www/html
+      - ./bin/cron-loop.sh:/usr/local/bin/cron-loop.sh:ro
+
+volumes:
+  db_data:

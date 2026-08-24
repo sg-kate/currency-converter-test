@@ -1,0 +1,13 @@
+# Local configuration — never commit, it holds credentials and the API key.
+.env
+
+# WordPress installation, bind-mounted for readability. Unpacked from the image on
+# first start and wiped by `make reset` — it is disposable, keep no source here.
+/wordpress/
+
+# Dependencies (installed, not vendored).
+vendor/
+node_modules/
+
+# OS noise.
+.DS_Store
