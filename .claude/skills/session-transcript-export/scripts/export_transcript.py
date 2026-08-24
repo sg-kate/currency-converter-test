@@ -60,6 +60,8 @@ PATTERN_RULES = (
     (re.compile(r"\b[\w.+-]+@[\w-]+\.[\w.]+\b"), "[REDACTED:email]"),
 )
 
+KEY_BODY_PATTERN = re.compile(r"[a-z]{2,6}_(?:live|test)_([A-Za-z0-9]{16,})")
+
 MIN_LITERAL_LEN = 6
 
 
@@ -103,6 +105,18 @@ def load_env_secrets(env_path: Path, example_path: Path) -> tuple[list[str], lis
             skipped.append(key)
             continue
         secrets.append(value)
+
+        # A prefixed API key is also registered without its prefix.
+        #
+        # `PATTERN_RULES` catches `fca_live_ABC…` written whole, and the literal above
+        # catches the exact value — but neither sees a key split across a concatenation,
+        # which is how one reached a transcript: `"fca_live_" + "ABC…"`. Two string
+        # fragments, and the entropy-bearing half carries no prefix to match on. Adding
+        # the body as its own literal closes that, and the body is long and random enough
+        # that redacting it cannot collide with ordinary prose.
+        body = KEY_BODY_PATTERN.fullmatch(value)
+        if body and body.group(1) not in published:
+            secrets.append(body.group(1))
 
     return sorted(set(secrets), key=len, reverse=True), skipped
 

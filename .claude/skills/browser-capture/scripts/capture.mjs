@@ -47,8 +47,18 @@ const DEFAULT_SHOTS = [
 const custom = argv
 	.filter((arg, index) => argv[index - 1] === '--shot')
 	.map((pair) => {
-		const [name, target] = pair.split('=');
-		return { name, path: target };
+		// Split on the FIRST '=' only. Admin paths carry their own: the whole point of
+		// `--shot rates=/wp/wp-admin/admin.php?page=currency-rates` is the query string, and
+		// a plain split('=') drops everything from the second one onwards — the request then
+		// goes to `admin.php?page` with no value, WordPress answers 403, and the screenshot
+		// is a permission error that looks like a bug in the plugin being captured.
+		const separator = pair.indexOf('=');
+
+		if (separator < 1) {
+			throw new Error(`--shot needs name=path, got "${pair}"`);
+		}
+
+		return { name: pair.slice(0, separator), path: pair.slice(separator + 1) };
 	});
 
 const shots = custom.length > 0 ? custom : DEFAULT_SHOTS;
