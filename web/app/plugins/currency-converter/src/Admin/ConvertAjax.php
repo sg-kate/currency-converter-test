@@ -9,7 +9,6 @@ namespace Drozd\Currency\Admin;
 
 use Drozd\Currency\Db\WpdbCurrencyRepository;
 use Drozd\Currency\Domain\Currency;
-use Drozd\Currency\Exception\ExceptionInterface;
 use Drozd\Currency\Service\CurrencyConverter;
 
 defined( 'ABSPATH' ) || exit;
@@ -95,15 +94,28 @@ final class ConvertAjax {
 
 			$result = $converter->convert( $amount, $from, $to );
 			$rate   = $converter->rate( $from, $to );
-		} catch ( ExceptionInterface $e ) {
+		} catch ( \Throwable $e ) {
 			/*
-			 * Every failure the module raises implements this interface, and each carries a
-			 * message written to be read by a person: which currency is unknown, which pair
-			 * has no stored rate, what to do about it. They are sent through as-is and the
-			 * browser writes them with `textContent`, so the currency code echoed back inside
-			 * one is text on the page and never markup.
+			 * `\Throwable`, not the module's own `ExceptionInterface`.
 			 *
-			 * 400 and not 500: all three are the caller asking for something impossible.
+			 * The module's failures all implement that interface and each carries a message
+			 * written to be read by a person: which currency is unknown, which pair has no
+			 * stored rate, what to do about it. But `currency_converter()` builds the
+			 * converter on first use, and `CurrencyConverter::__construct()` throws a plain
+			 * `\RuntimeException` when `bcmath` is absent — the one failure this plugin is
+			 * most likely to meet, because it ships as a zip to hosts whose extension set
+			 * nobody here chose. Catching only the interface turned that into an uncaught
+			 * fatal and a 500, so the widget showed its generic string instead of the
+			 * explanation the constructor took care to write. `Shortcode` and
+			 * `Rest\ConvertController` catch `\Throwable` for the same reason.
+			 *
+			 * The message goes through as-is, which is safe *here* and only here: this
+			 * endpoint is `wp_ajax_` with no `nopriv`, behind a capability check and a
+			 * nonce, so the reader is an administrator. The public REST route deliberately
+			 * does the opposite. The browser writes it with `textContent`, so a currency code
+			 * echoed back inside one is text on the page and never markup.
+			 *
+			 * 400 and not 500: these are the caller asking for something impossible.
 			 */
 			wp_send_json_error( array( 'message' => $e->getMessage() ), 400 );
 

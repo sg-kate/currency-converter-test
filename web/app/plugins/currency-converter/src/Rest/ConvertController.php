@@ -145,6 +145,30 @@ final class ConvertController {
 	}
 
 	/**
+	 * How much of a failure to tell the caller.
+	 *
+	 * The module's exception messages are written for whoever can act on them and name
+	 * things a stranger has no use for — a WP-CLI command to run, the full list of served
+	 * currencies, the state of the daily sync. This route is public and the block prints the
+	 * reply straight into the page, so the detail is given only to a reader who could
+	 * actually do something with it.
+	 *
+	 * Separated from `handle()` so the rule can be asserted without standing up a REST
+	 * request; it is the one line here whose getting-it-wrong is invisible in testing and
+	 * obvious in production.
+	 *
+	 * @param string $detail The exception's own message.
+	 * @return string What to send back.
+	 */
+	public static function client_message( $detail ) {
+		if ( function_exists( 'current_user_can' ) && current_user_can( 'manage_options' ) ) {
+			return (string) $detail;
+		}
+
+		return __( 'That conversion is not available right now.', 'currency-converter' );
+	}
+
+	/**
 	 * Convert, and answer.
 	 *
 	 * @param WP_REST_Request $request The request.
@@ -177,12 +201,29 @@ final class ConvertController {
 			/*
 			 * The module's own failures are the expected ones — no rate stored for a pair,
 			 * an amount that got past validation, a code the list dropped between the
-			 * validation callback and here. They are the client's problem to read, so they
-			 * carry their message and a 400 rather than becoming a 500.
+			 * validation callback and here. They are a 400 rather than a 500.
+			 *
+			 * **The message is not passed through to a stranger.** These exceptions are
+			 * written for whoever can fix them: `RatesUnavailableException::nothing_stored()`
+			 * says "the daily sync has not completed successfully yet; run
+			 * `wp currency rates update --force`", and `UnknownCurrencyException` names every
+			 * currency the module serves. This route is public and the block prints whatever
+			 * comes back straight into the page, so an anonymous visitor typing into a
+			 * converter would have been shown a WP-CLI command and the state of the site's
+			 * cron.
+			 *
+			 * `Shortcode::render()` already made this exact call — detail for an
+			 * administrator, nothing for a reader — and this is the same rule applied at the
+			 * other entry point. The full message still reaches the log below.
 			 */
+			if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
+				// phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Guarded by WP_DEBUG; the detail has to go somewhere.
+				error_log( 'currency-converter: REST convert refused: ' . $e->getMessage() );
+			}
+
 			return new WP_Error(
 				'currency_converter_cannot_convert',
-				$e->getMessage(),
+				self::client_message( $e->getMessage() ),
 				array( 'status' => 400 )
 			);
 		} catch ( \Throwable $e ) {

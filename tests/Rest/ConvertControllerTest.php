@@ -103,6 +103,40 @@ final class ConvertControllerTest extends TestCase {
 	}
 
 	/**
+	 * A reader is told the conversion failed; nobody else's business is disclosed.
+	 *
+	 * The route is public and `view.js` prints the reply into the page. The module's own
+	 * messages are written for an administrator — `RatesUnavailableException::nothing_stored()`
+	 * names a WP-CLI command and the state of the daily sync, `UnknownCurrencyException`
+	 * lists every served currency. Passing those through put internal detail in front of an
+	 * anonymous visitor who could do nothing with it, which is the policy `Shortcode` had
+	 * already settled the other way.
+	 */
+	public function test_an_anonymous_caller_gets_a_generic_refusal(): void {
+		Functions\when( 'current_user_can' )->justReturn( false );
+
+		$detail = 'No exchange rates are stored for base USD. The daily sync has not completed '
+			. 'successfully yet; run `wp currency rates update --force`.';
+
+		$message = ConvertController::client_message( $detail );
+
+		$this->assertSame( 'That conversion is not available right now.', $message );
+		$this->assertStringNotContainsString( 'wp currency', $message );
+		$this->assertStringNotContainsString( 'sync', $message );
+	}
+
+	/**
+	 * Somebody who can fix it still gets told what to fix.
+	 */
+	public function test_an_administrator_gets_the_real_message(): void {
+		Functions\when( 'current_user_can' )->justReturn( true );
+
+		$detail = 'No exchange rates are stored for base USD.';
+
+		$this->assertSame( $detail, ConvertController::client_message( $detail ) );
+	}
+
+	/**
 	 * @dataProvider malformed_codes
 	 */
 	public function test_a_malformed_code_is_refused_without_throwing( $code ): void {

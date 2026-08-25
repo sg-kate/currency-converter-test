@@ -8,7 +8,6 @@
 namespace Drozd\Currency\Cli;
 
 use Drozd\Currency\DemoMode;
-use Drozd\Currency\Exception\ExceptionInterface;
 use Drozd\Currency\Service\CurrencyConverter;
 use WP_CLI;
 use WP_CLI\Utils;
@@ -72,9 +71,13 @@ final class ConvertCommand {
 		try {
 			$result = $converter->convert( $amount, $from, $to );
 			$rate   = $converter->rate( $from, $to );
-		} catch ( ExceptionInterface $e ) {
-			// Every failure the module raises carries a message written for a person and,
-			// where there is one, the command that fixes it. Non-zero exit.
+		} catch ( \Throwable $e ) {
+			// `\Throwable`, not the module's own `ExceptionInterface`. Those all carry a
+			// message written for a person and, where there is one, the command that fixes
+			// it — but `CurrencyConverter::__construct()` throws a plain `\RuntimeException`
+			// when `bcmath` is absent, and catching only the interface let that escape as an
+			// uncaught fatal instead of the explanation it took care to write. A terminal is
+			// the right place for the full message, so it goes through as-is. Non-zero exit.
 			WP_CLI::error( $e->getMessage() );
 
 			return;

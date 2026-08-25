@@ -72,11 +72,9 @@
 				'&to=' +
 				encodeURIComponent( to.value );
 
+			// No X-WP-Nonce: the route is public, and core rejects a *stale* nonce with a
+			// 403 even when the endpoint requires no authentication. See RatesBlock.
 			var options = { headers: {}, credentials: 'same-origin' };
-
-			if ( settings.nonce ) {
-				options.headers['X-WP-Nonce'] = settings.nonce;
-			}
 
 			if ( controller ) {
 				options.signal = controller.signal;
@@ -93,8 +91,10 @@
 				} )
 				.then( function ( result ) {
 					if ( ! result.ok ) {
-						// The endpoint's own message when it has one — it explains which
-						// pair is missing, which is what somebody needs to read.
+						// The endpoint decides how much to say: a generic refusal for a
+						// reader, the real reason only for someone who can act on it. It is
+						// not this file's job to second-guess that, so whatever comes back
+						// is printed as-is.
 						output.textContent =
 							( result.body && result.body.message ) || strings.error || '';
 						return;
@@ -126,7 +126,9 @@
 		from.addEventListener( 'change', convert );
 		to.addEventListener( 'change', convert );
 
-		// The form has no server-side submit target; Enter should convert, not reload.
+		// The form does submit by GET and the server does answer it — that is the no-script
+		// path. When this script is running the reload is pure cost, so Enter converts in
+		// place instead.
 		form.addEventListener( 'submit', function ( event ) {
 			event.preventDefault();
 			convert();

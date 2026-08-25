@@ -35,6 +35,6 @@
 		}
 	},
 	"editorScript": "currency-converter-block-editor",
-	"script": "currency-converter-block-view",
+	"viewScript": "currency-converter-block-view",
 	"style": "currency-converter-block"
 }

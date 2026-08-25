@@ -17,6 +17,7 @@
 
 	var el = element.createElement;
 	var __ = i18n.__;
+	var useBlockProps = blockEditor.useBlockProps;
 	var InspectorControls = blockEditor.InspectorControls;
 	var PanelBody = components.PanelBody;
 	var ToggleControl = components.ToggleControl;
@@ -87,10 +88,20 @@
 				)
 			);
 
-			var preview = el( ServerSideRender, {
-				block: 'currency-converter/rates',
-				attributes: attributes
-			} );
+			// An apiVersion 2 block has to put the block props on a real wrapper element.
+			// Without one nothing carries the block's own class and `data-block`, so
+			// click-to-select, the toolbar and the `align` support declared in block.json
+			// never attach to the preview — and the editor logs a warning saying so.
+			var blockProps = useBlockProps ? useBlockProps() : {};
+
+			var preview = el(
+				'div',
+				blockProps,
+				el( ServerSideRender, {
+					block: 'currency-converter/rates',
+					attributes: attributes
+				} )
+			);
 
 			return el( element.Fragment, null, controls, preview );
 		},
