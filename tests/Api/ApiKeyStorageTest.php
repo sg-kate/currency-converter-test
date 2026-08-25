@@ -51,6 +51,13 @@ final class ApiKeyStorageTest extends TestCase {
 	 */
 	private array $updated = array();
 
+	/**
+	 * Notices raised through `add_settings_error()`.
+	 *
+	 * @var array<int, array<string, string>>
+	 */
+	private array $notices = array();
+
 	protected function set_up(): void {
 		parent::set_up();
 
@@ -89,6 +96,19 @@ final class ApiKeyStorageTest extends TestCase {
 		Functions\when( 'delete_option' )->alias(
 			function ( string $name ) {
 				unset( $this->options[ $name ] );
+
+				return true;
+			}
+		);
+
+		// `SettingsPage::sanitize_api_key()` reports the outcome of every branch through
+		// this, including the "left blank, nothing changed" one. Collected rather than
+		// discarded so a test can assert what the administrator was actually told.
+		$this->notices = array();
+
+		Functions\when( 'add_settings_error' )->alias(
+			function ( string $slug, string $code, string $message, string $type = 'error' ) {
+				$this->notices[] = compact( 'slug', 'code', 'message', 'type' );
 
 				return true;
 			}
@@ -345,5 +365,32 @@ final class ApiKeyStorageTest extends TestCase {
 			'a whole curl command'  => array( 'curl -H "apikey: fca_live_abcdefghijkl"', false ),
 			'a newline on the end'  => array( "fca_live_abcdefghijklmnop\n", false ),
 		);
+	}
+
+	/**
+	 * Leaving the field blank is a successful save, and has to look like one.
+	 *
+	 * The field's own help text says to leave it blank to keep the current key, so this is
+	 * the ordinary path rather than an edge case. It used to return early without raising
+	 * any notice, and because the screen renders only `settings_errors( 'currency_converter' )`
+	 * — core's own "Settings saved." is registered under the `general` slug — the
+	 * administrator saw nothing at all. A save that looks identical to a failure is a bug
+	 * even when the data is correct.
+	 */
+	public function test_a_blank_submission_confirms_that_nothing_changed(): void {
+		Functions\when( 'is_from_environment' )->justReturn( false );
+
+		$this->options[ ApiKey::OPTION ] = 'fca_live_STOREDKEY_0123456789';
+
+		$returned = SettingsPage::sanitize_api_key( '' );
+
+		$this->assertSame( 'fca_live_STOREDKEY_0123456789', $returned, 'the stored key must survive' );
+		$this->assertNotSame( array(), $this->notices, 'a blank save must say something' );
+
+		$notice = end( $this->notices );
+
+		$this->assertSame( 'currency_converter', $notice['slug'], 'must use the slug this screen renders' );
+		$this->assertNotSame( 'error', $notice['type'], 'nothing failed' );
+		$this->assertStringContainsString( 'unchanged', $notice['message'] );
 	}
 }

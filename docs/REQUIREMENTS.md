@@ -107,7 +107,7 @@ make test ARGS="--filter=CurrenciesTest"
 | Path | Role |
 | --- | --- |
 | `web/app/plugins/currency-converter/src/Currencies.php` | `const CODES` plus `codes()` / `all()`, filtered through `currency_converter_currencies` |
-| `web/app/plugins/currency-converter/src/Cli/CurrencyCommand.php` | `wp currency currencies` |
+| `web/app/plugins/currency-converter/src/Cli/CurrenciesCommand.php` | `wp currency currencies` |
 | `tests/Unit/CurrenciesTest.php` | Shape of the list |
 
 ---
@@ -150,9 +150,9 @@ bin/wp eval 'define( "FREECURRENCYAPI_KEY", "nope" ); ' ; bin/wp currency update
 
 | Path | Role |
 | --- | --- |
-| `web/app/plugins/currency-converter/src/Api/Client.php` | Builds and sends the request, decodes JSON, maps HTTP status to exceptions |
+| `web/app/plugins/currency-converter/src/Api/FreeCurrencyApiClient.php` | Builds and sends the request, decodes JSON, maps HTTP status to exceptions |
 | `web/app/plugins/currency-converter/src/Api/ApiException.php` | Transport, quota (429) and auth (401/403) failures |
-| `web/app/plugins/currency-converter/src/RateUpdater.php` | Orchestrates fetch → filter → store |
+| `web/app/plugins/currency-converter/src/Service/RateUpdater.php` | Orchestrates fetch → filter → store |
 | `tests/Unit/ClientTest.php` | Request shape, with the HTTP layer faked |
 
 ---
@@ -282,8 +282,8 @@ bin/wp eval 'echo get_option( "currency_converter_last_sync" );'
 
 | Path | Role |
 | --- | --- |
-| `web/app/plugins/currency-converter/src/Cron/DailySync.php` | Schedules and unschedules `currency_converter_update_rates` |
-| `web/app/plugins/currency-converter/src/RateUpdater.php` | Freshness window, `currency_converter_last_sync` option |
+| `web/app/plugins/currency-converter/src/Cron/Scheduler.php` | Schedules and unschedules `currency_converter_update_rates` |
+| `web/app/plugins/currency-converter/src/Service/RateUpdater.php` | Freshness window, `currency_converter_last_sync` option |
 | `bin/cron-loop.sh`, `docker-compose.yml` (`cron` service) | Existing scheduler that makes the event fire |
 
 ---
@@ -300,7 +300,7 @@ The signature is taken literally: `convert( float $amount, string $from, string 
 **Acceptance**
 
 ```bash
-bin/wp eval 'printf( "%.2f", ( new Drozd\Currency\Converter( new Drozd\Currency\Repository\RateRepository() ) )->convert( 123, "USD", "RUB" ) );'
+bin/wp eval 'printf( "%.2f", ( new Drozd\Currency\Service\CurrencyConverter( new Drozd\Currency\Db\WpdbRateRepository() ) )->convert( 123, "USD", "RUB" ) );'
 # expected: a number greater than 0, e.g. 11439.87
 
 bin/wp currency convert 123 USD RUB
@@ -325,9 +325,9 @@ make test ARGS="--filter=ConverterTest"
 
 | Path | Role |
 | --- | --- |
-| `web/app/plugins/currency-converter/src/Converter.php` | `convert()`, cross-rate through the stored base |
+| `web/app/plugins/currency-converter/src/Service/CurrencyConverter.php` | `convert()`, cross-rate through the stored base |
 | `web/app/plugins/currency-converter/src/Exception/` | `UnknownCurrencyException`, `MissingRateException` |
-| `web/app/plugins/currency-converter/src/Cli/CurrencyCommand.php` | `wp currency convert` |
+| `web/app/plugins/currency-converter/src/Cli/ConvertCommand.php` | `wp currency convert` |
 | `tests/Unit/ConverterTest.php` | The arithmetic above |
 
 ---
@@ -394,7 +394,7 @@ bin/composer show | grep -iE 'currency|everapi'
 | Path | Role |
 | --- | --- |
 | `composer.json`, `composer.lock` | Absence of the dependency is the evidence |
-| `web/app/plugins/currency-converter/src/Api/Client.php` | The hand-written client that stands in for it |
+| `web/app/plugins/currency-converter/src/Api/FreeCurrencyApiClient.php` | The hand-written client that stands in for it |
 
 ---
 
@@ -412,23 +412,35 @@ added to `composer.json`.
 **Acceptance**
 
 ```bash
-grep -c 'wp_remote_get' web/app/plugins/currency-converter/src/Api/Client.php
-# expected: 1
+# Comments stripped with `php -w` before grepping. A plain grep is useless here: several
+# docblocks discuss `wp_remote_get` and `curl_*` precisely because this rule exists, so an
+# unstripped search reports four files and a count of six, and proves nothing either way.
+for f in $(find web/app/plugins/currency-converter/src -name '*.php'); do
+  php -w "$f" | grep -qE 'wp_remote_|curl_init|fsockopen|GuzzleHttp' && echo "$f"
+done
+# expected: exactly one line — web/app/plugins/currency-converter/src/Http/WpHttpClient.php
 
-grep -rln 'wp_remote_get\|curl_init\|file_get_contents\|GuzzleHttp' web/app/plugins/currency-converter/
-# expected: exactly one path — web/app/plugins/currency-converter/src/Api/Client.php
+# `file_get_contents` is not in that pattern on purpose: Service/FixtureLoader.php uses it to
+# read a bundled JSON file from disk, which is not a network call.
+grep -rn 'file_get_contents' web/app/plugins/currency-converter/src/Service/FixtureLoader.php
+# expected: one hit, reading a local path
+
+# And the transport underneath is cURL, which is what the requirement asks for:
+bin/wp eval 'echo ( class_exists( "WP_Http_Curl" ) && WP_Http_Curl::test() ) ? "libcurl" : "streams", "\n";'
+# expected: libcurl
 ```
 
 The second command is the real requirement: HTTP happens in one file, so the rest of the module is
-unit-testable without a network. `tests/Unit/ClientTest.php` fakes the transport through the
-`pre_http_request` filter and never opens a socket.
+unit-testable without a network. `tests/Api/FreeCurrencyApiClientTest.php` and
+`tests/Fakes/FakeHttpClient.php` substitute the transport at the interface and never open a socket.
 
 **Where**
 
 | Path | Role |
 | --- | --- |
-| `web/app/plugins/currency-converter/src/Api/Client.php` | The only file allowed to make a request |
-| `tests/Unit/ClientTest.php` | Faked transport, asserts no real request is attempted |
+| `web/app/plugins/currency-converter/src/Http/WpHttpClient.php` | The only file allowed to make a request |
+| `web/app/plugins/currency-converter/src/Api/FreeCurrencyApiClient.php` | Builds the request, decodes JSON, maps status to exceptions |
+| `tests/Fakes/FakeHttpClient.php` | Faked transport, asserts no real request is attempted |
 
 ---
 
@@ -548,10 +560,15 @@ to spare.
 docker compose exec -T db sh -c 'mariadb -u"$MARIADB_USER" -p"$MARIADB_PASSWORD" "$MARIADB_DATABASE" -N -e "SELECT DISTINCT base_code FROM wp_cc_rates"'
 # expected: USD — one row, confirming the single-base design is what is stored
 
-bin/wp eval 'echo ( new Drozd\Currency\Api\Client() )->probe_base( "EUR" );'
-# expected: records the live response for a non-USD base, e.g.
-# HTTP 403 {"message":"subscription plan does not support this feature"}
-# This command exists to document the plan's actual behaviour, since the docs do not.
+# One live request, straight at the API, because the module has no code path for a
+# non-USD base — that is the collision. `FreeCurrencyApiClient` never sends
+# `base_currency`, so there is nothing in the plugin to call here.
+set -a; . ./.env; set +a
+curl -s -H "apikey: $FREECURRENCYAPI_KEY" \
+     'https://api.freecurrencyapi.com/v1/latest?base_currency=EUR' | head -c 200
+# expected: the free plan refusing the parameter, e.g.
+# {"message":"Subscription plan does not support this feature"}
+# This documents the plan's actual behaviour, since the docs do not.
 ```
 
 The cross-rate path is what makes the derivation trustworthy, and it is tested directly:
@@ -594,8 +611,11 @@ wired by a container will not find one. The brief's "suitable" is doing the work
 **Resolution:** WordPress is chosen deliberately, and the mismatch is absorbed rather than ignored.
 The module is a plugin, PSR-4 autoloaded under `Drozd\Currency\`, with constructor injection by hand
 — `new Converter( new RateRepository() )` — so the domain classes stay framework-shaped even though
-the platform is not. WordPress is confined to the edges: `wp_remote_get` in `Api\Client`, `$wpdb` in
-`Repository\RateRepository`, hooks in `Plugin`, `WP_List_Table` in `Admin\`. `Converter` itself
+the platform is not. WordPress is confined to the edges: `wp_remote_get` in `Http\WpHttpClient`,
+`$wpdb` in `Db\WpdbRateRepository`, hooks in `Plugin`, `WP_List_Table` in `Admin\`. `Currencies`
+is the one deliberate exception outside those edges — it runs its list through a single
+`apply_filters()` so a site can extend it, which is why the gate below covers `Domain\` and not
+it. The `Domain\` layer itself
 touches no WordPress function, which is why it can be unit-tested with Brain\Monkey and no database.
 Bedrock supplies what plain WordPress lacks — env-based configuration, Composer-owned
 dependencies, a real `web/` document root — and closes most of the distance to a framework layout.
@@ -603,7 +623,9 @@ dependencies, a real `web/` document root — and closes most of the distance to
 **Verification**
 
 ```bash
-grep -rlE 'wp_|WP_|\$wpdb|add_(action|filter)' web/app/plugins/currency-converter/src/Converter.php web/app/plugins/currency-converter/src/Currencies.php
+for f in web/app/plugins/currency-converter/src/Domain/*.php; do
+  php -w "$f" | grep -qE 'wp_|WP_|\$wpdb|add_action|add_filter|apply_filters' && echo "LEAK: $f"
+done
 # expected: no output, exit status 1 — the domain layer is framework-free
 
 make test
@@ -781,18 +803,22 @@ git check-ignore -q .env && echo ignored
 
 | # | Requirement | Status | Primary location |
 | --- | --- | --- | --- |
-| 1 | Module for storing and converting currencies | Planned | `web/app/plugins/currency-converter/` |
-| 2 | Predefined list of currencies | Planned | `src/Currencies.php` |
-| 3 | Rates downloaded for all available currencies | Planned | `src/Api/Client.php` |
-| 4 | Rates stored in the database | Planned | `src/Db/Schema.php` |
-| 5 | Updated once a day | Planned | `src/Cron/DailySync.php` + `cron` container |
-| 6 | Conversion service | Planned | `src/Converter.php` |
-| 7 | Admin page with all saved rates | Planned | `src/Admin/RatesListTable.php` |
-| 8 | No freecurrencyapi client library | Planned | `composer.json` / `composer.lock` |
-| 9 | Integration via an HTTP tool | Planned | `src/Api/Client.php` |
+| 1 | Module for storing and converting currencies | Satisfied | `web/app/plugins/currency-converter/` |
+| 2 | Predefined list of currencies | Satisfied | `src/Currencies.php` |
+| 3 | Rates downloaded for all available currencies | Satisfied | `src/Api/FreeCurrencyApiClient.php` |
+| 4 | Rates stored in the database | Satisfied | `src/Db/Schema.php` |
+| 5 | Updated once a day | Satisfied | `src/Cron/Scheduler.php` + `cron` container |
+| 6 | Conversion service | Satisfied | `src/Service/CurrencyConverter.php` |
+| 7 | Admin page with all saved rates | Satisfied | `src/Admin/RatesListTable.php` |
+| 8 | No freecurrencyapi client library | Satisfied | `composer.json` / `composer.lock` |
+| 9 | Integration via an HTTP tool | Satisfied | `src/Http/WpHttpClient.php` |
 | 10 | PHP framework | Satisfied | `composer.json`, `config/` |
-| 11 | Implemented using AI | Planned | `docs/transcripts/` |
-| 12 | Screenshots or chat dumps delivered | Planned | `docs/screenshots/` |
+| 11 | Implemented using AI | Satisfied | `docs/transcripts/` |
+| 12 | Screenshots or chat dumps delivered | Satisfied | `docs/screenshots/` |
+
+Every row above was re-checked by running its own acceptance commands, not by reading the code.
+The block and the REST route that back the front end arrived after this document was first
+written; they are covered by R6 and R9 respectively.
 
 | # | Collision | Gives way |
 | --- | --- | --- |

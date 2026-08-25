@@ -118,6 +118,29 @@ status_401="$code"
 echo
 echo "Writing PROVENANCE.md"
 
+# What the file already claims, read BEFORE the redirect below truncates it.
+#
+# A run without a key deliberately leaves latest.json and currencies.json untouched, but
+# the table used to be regenerated from this run's statuses regardless — so a colleague
+# with no key in .env, refreshing the 401 fixture, silently relabelled two real captures
+# as "UNVERIFIED" and dropped the quota line. The files were fine and the record of where
+# they came from was destroyed, which is the one thing this file exists to keep.
+#
+# A row is rewritten only when this run actually re-captured that file. Otherwise the
+# previous row is carried forward verbatim, and only if there is no previous row at all
+# does it fall back to UNVERIFIED.
+prev_latest=""
+prev_currencies=""
+prev_401=""
+prev_quota=""
+
+if [ -f "$DIR/PROVENANCE.md" ]; then
+	prev_latest=$(grep -m1 '^| `latest.json`' "$DIR/PROVENANCE.md" || true)
+	prev_currencies=$(grep -m1 '^| `currencies.json`' "$DIR/PROVENANCE.md" || true)
+	prev_401=$(grep -m1 '^| `error-401.json`' "$DIR/PROVENANCE.md" || true)
+	prev_quota=$(grep -m1 '^Monthly quota after this run:' "$DIR/PROVENANCE.md" || true)
+fi
+
 {
 	echo "# Fixture provenance"
 	echo
@@ -127,22 +150,31 @@ echo "Writing PROVENANCE.md"
 	if [ -n "$captured_month" ]; then
 		echo
 		echo "Monthly quota after this run: **${captured_month}** remaining of ${captured_limit:-unknown}."
+	elif [ -n "$prev_quota" ]; then
+		echo
+		echo "$prev_quota"
 	fi
 	echo
 	echo "| File | Source | Status |"
 	echo "| --- | --- | --- |"
 	if [ "$status_latest" = "200" ]; then
 		echo "| \`latest.json\` | live \`GET /v1/latest\`, no filters | **real**, captured $(date -u '+%Y-%m-%d') |"
+	elif [ -n "$prev_latest" ]; then
+		echo "$prev_latest"
 	else
 		echo "| \`latest.json\` | shape from the \`freecurrencyapi\` skill | **UNVERIFIED** — no live capture yet |"
 	fi
 	if [ "$status_currencies" = "200" ]; then
 		echo "| \`currencies.json\` | live \`GET /v1/currencies\` | **real**, captured $(date -u '+%Y-%m-%d') |"
+	elif [ -n "$prev_currencies" ]; then
+		echo "$prev_currencies"
 	else
 		echo "| \`currencies.json\` | shape from the \`freecurrencyapi\` skill | **UNVERIFIED** — no live capture yet |"
 	fi
 	if [ "$status_401" = "401" ]; then
 		echo "| \`error-401.json\` | live \`GET /v1/latest\` with an invalid key | **real**, captured $(date -u '+%Y-%m-%d') |"
+	elif [ -n "$prev_401" ]; then
+		echo "$prev_401"
 	else
 		echo "| \`error-401.json\` | shape from the \`freecurrencyapi\` skill | **UNVERIFIED** |"
 	fi

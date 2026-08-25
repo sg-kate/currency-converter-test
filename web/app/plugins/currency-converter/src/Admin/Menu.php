@@ -82,6 +82,13 @@ final class Menu {
 	private static $rates_hook = '';
 
 	/**
+	 * The settings screen's hook suffix, once `admin_menu` has run.
+	 *
+	 * @var string
+	 */
+	private static $settings_hook = '';
+
+	/**
 	 * Register the admin surface.
 	 *
 	 * @return void
@@ -143,7 +150,7 @@ final class Menu {
 			array( RatesPage::class, 'render' )
 		);
 
-		add_submenu_page(
+		$settings_hook = add_submenu_page(
 			self::RATES_SLUG,
 			__( 'Currency converter settings', 'currency-converter' ),
 			__( 'Settings', 'currency-converter' ),
@@ -151,6 +158,13 @@ final class Menu {
 			self::SETTINGS_SLUG,
 			array( SettingsPage::class, 'render' )
 		);
+
+		// Kept for the same reason as the rates hook: the stylesheet has to know which
+		// screens are ours, and the settings screen emits markup — `.cc-status`,
+		// `.cc-action` — that only `assets/admin.css` styles.
+		if ( is_string( $settings_hook ) && '' !== $settings_hook ) {
+			self::$settings_hook = $settings_hook;
+		}
 
 		// False when the current user cannot see the page. Hooking `load-` on that is
 		// harmless but pointless, and the string would be `load-`.
@@ -193,6 +207,15 @@ final class Menu {
 	 */
 	public static function rates_hook() {
 		return self::$rates_hook;
+	}
+
+	/**
+	 * The settings screen's hook suffix.
+	 *
+	 * @return string Hook suffix, or an empty string before `admin_menu` has run.
+	 */
+	public static function settings_hook() {
+		return self::$settings_hook;
 	}
 
 	/**

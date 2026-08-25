@@ -136,8 +136,30 @@ final class SettingsPage {
 		$submitted = is_string( $value ) ? trim( $value ) : '';
 
 		if ( '' === $submitted ) {
-			// Empty means unchanged. The field renders empty on every load, so treating this
-			// as a deletion would wipe the key every time the form is saved.
+			/*
+			 * Empty means unchanged. The field renders empty on every load, so treating this
+			 * as a deletion would wipe the key every time the form is saved.
+			 *
+			 * It still has to say so. This page prints `settings_errors( 'currency_converter' )`
+			 * and nothing else, while core registers its own "Settings saved." under the
+			 * `general` slug — which this screen never renders, being under `admin.php`. So an
+			 * administrator who did exactly what the field instructs ("leave blank to keep the
+			 * current key") got no feedback whatsoever, and a successful save was
+			 * indistinguishable from one that silently failed.
+			 */
+			add_settings_error(
+				'currency_converter',
+				'currency_converter_api_key_unchanged',
+				ApiKey::is_from_environment()
+					? __( 'Settings saved. The API key comes from the environment (FREECURRENCYAPI_KEY) and is not editable here.', 'currency-converter' )
+					: (
+						'' === $existing
+							? __( 'Settings saved. No API key is stored yet — paste one above to add it.', 'currency-converter' )
+							: __( 'Settings saved. The stored API key was left unchanged.', 'currency-converter' )
+					),
+				'info'
+			);
+
 			return $existing;
 		}
 

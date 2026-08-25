@@ -157,15 +157,29 @@ final class RatesPage {
 	 * @return string Something readable, or the input when it cannot be parsed.
 	 */
 	private static function readable_date( $iso ) {
-		try {
-			$date = new \DateTimeImmutable( $iso );
-		} catch ( \Exception $e ) {
-			unset( $e );
+		/*
+		 * `Rate::datetime_from_string()` rather than `new \DateTimeImmutable( $iso )`.
+		 *
+		 * Two things were wrong with the constructor. It does not throw on an empty string —
+		 * it returns *now* — so the `catch` that existed for exactly that input was dead, and
+		 * `DemoMode::details()` yields `'captured_at' => ''` whenever the stored record lacks
+		 * the key. The banner whose whole purpose is to stop somebody quoting invented
+		 * numbers then announced that the fixture was captured today.
+		 *
+		 * And it parsed any offset without converting it, while this method appends ' UTC'
+		 * unconditionally: `2026-08-20T12:00:00+03:00` printed as `2026-08-20 12:00:00 UTC`,
+		 * three hours out. The helper parses in UTC against the module's own format and
+		 * returns null rather than guessing.
+		 */
+		$date = Rate::datetime_from_string( $iso );
 
-			return (string) $iso;
+		if ( null === $date ) {
+			$raw = trim( (string) $iso );
+
+			return '' === $raw ? __( 'an unknown date', 'currency-converter' ) : $raw;
 		}
 
-		return $date->format( Rate::DATETIME_FORMAT ) . ' UTC';
+		return $date->setTimezone( new \DateTimeZone( 'UTC' ) )->format( Rate::DATETIME_FORMAT ) . ' UTC';
 	}
 
 	/**
@@ -301,16 +315,34 @@ final class RatesPage {
 	 * @return void
 	 */
 	public static function enqueue( $hook_suffix ) {
-		if ( '' === Menu::rates_hook() || Menu::rates_hook() !== $hook_suffix ) {
+		$rates    = Menu::rates_hook();
+		$settings = Menu::settings_hook();
+
+		$is_rates    = '' !== $rates && $rates === $hook_suffix;
+		$is_settings = '' !== $settings && $settings === $hook_suffix;
+
+		if ( ! $is_rates && ! $is_settings ) {
 			return;
 		}
 
+		/*
+		 * The stylesheet goes to both screens, because it styles both. Roughly a third of
+		 * `assets/admin.css` — `.cc-status`, `.cc-status th`, `.cc-action`,
+		 * `.cc-action .description` — describes markup that only `SettingsPage` emits, and
+		 * while this was gated on the rates screen alone that third never loaded anywhere:
+		 * the status table had no sizing and the two action forms rendered flush together.
+		 */
 		wp_enqueue_style(
 			'currency-converter-admin',
 			plugins_url( 'assets/admin.css', CURRENCY_CONVERTER_FILE ),
 			array(),
 			CURRENCY_CONVERTER_VERSION
 		);
+
+		// The script drives the converter widget, which exists only on the rates screen.
+		if ( ! $is_rates ) {
+			return;
+		}
 
 		wp_enqueue_script(
 			'currency-converter-admin',
