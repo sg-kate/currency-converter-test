@@ -42,8 +42,13 @@ nothing.
 | User / password | `admin` / `admin` |
 
 **http://localhost:8080/currency-rates/ is the page to open first.** It carries the block described
-below: a live converter over the stored rates, and the full rate table under it. `make bootstrap`
+below: a working converter over the stored rates, and the full rate table under it. `make bootstrap`
 publishes it, so it is there on a clean clone.
+
+With no API key configured, bootstrap seeds the table from the bundled fixture so the page has
+something to show. Those rows are **demo data, dated in the past**, and every surface that renders
+them says so. Set a key and run `bin/wp currency rates update --force` to replace them with live
+rates.
 
 The admin lives under `/wp/`, not at `/wp-admin` — that is Bedrock's layout, and a bookmark from a
 stock WordPress site will 404.

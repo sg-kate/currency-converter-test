@@ -167,6 +167,27 @@ if wp plugin is-active currency-converter 2>/dev/null; then
 	else
 		ok 'demo page already at /currency-rates/'
 	fi
+
+	# Give that page something to show. Without an API key nothing can be fetched,
+	# and a reviewer following the README would land on an empty table.
+	#
+	# Only when the table is empty, so this can never overwrite real rates: once a
+	# key is configured and a sync has run, the count is non-zero and this is
+	# skipped for good. The fixture dates its rows in the past and switches demo
+	# mode on, which puts a "Demo data, not live rates" warning on every surface
+	# that renders them — the one thing worse than an empty table is a full one
+	# that lies about where it came from.
+	stored=$(wp eval 'global $wpdb; echo (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->prefix}cc_rates" );' 2>/dev/null | tr -d '\r')
+
+	if [ "${stored:-0}" = "0" ]; then
+		if wp currency rates load-fixture >/dev/null 2>&1; then
+			ok 'demo rates loaded (fixture — not live; set an API key for real rates)'
+		else
+			warn 'no rates stored and the fixture would not load — the page will be empty'
+		fi
+	else
+		ok "rates already stored (${stored} rows)"
+	fi
 fi
 
 # ------------------------------------------------------------ config checks ---
