@@ -29,7 +29,24 @@ spl_autoload_register(
 		}
 
 		$relative_class = substr( $class_name, $length );
-		$path           = __DIR__ . '/src/' . str_replace( '\\', '/', $relative_class ) . '.php';
+
+		/*
+		 * Only PSR-4 name characters, and nothing that can climb out of `src/`.
+		 *
+		 * Without this the class name is pasted into a filesystem path and `..` survives
+		 * `str_replace( '\\', '/', … )` intact: asking for `Drozd\Currency\..\..\..\wp-config`
+		 * resolved to the plugin's grandparent and `require_once`d whatever was readable
+		 * there. Nothing in this module passes a variable class name to the autoloader, so it
+		 * was not reachable from here — but an autoloader is global, and any `class_exists()`
+		 * or `new $name` anywhere on the site that lets a request reach a string with this
+		 * prefix would have turned it into local file inclusion. Cheap to close, and it
+		 * cannot be closed later from outside the plugin.
+		 */
+		if ( 1 !== preg_match( '/^[A-Za-z0-9_\\\\]+$/', $relative_class ) ) {
+			return;
+		}
+
+		$path = __DIR__ . '/src/' . str_replace( '\\', '/', $relative_class ) . '.php';
 
 		if ( is_readable( $path ) ) {
 			require_once $path;
