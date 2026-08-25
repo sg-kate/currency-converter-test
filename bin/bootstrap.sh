@@ -152,6 +152,23 @@ else
 	warn 'currency-converter not present — skipping activation'
 fi
 
+# A front page for the module, so a reviewer has somewhere to look that is not
+# wp-admin. Created only when missing and matched by slug rather than title, so
+# renaming it in the editor does not make bootstrap create a second one.
+if wp plugin is-active currency-converter 2>/dev/null; then
+	if [ "$(wp eval 'echo ( $p = get_page_by_path( "currency-rates" ) ) ? $p->ID : 0;' 2>/dev/null | tr -d '\r')" = "0" ]; then
+		wp post create \
+			--post_type=page \
+			--post_title='Currency Rates' \
+			--post_name=currency-rates \
+			--post_status=publish \
+			--post_content='<!-- wp:currency-converter/rates /-->' >/dev/null
+		ok 'demo page created at /currency-rates/'
+	else
+		ok 'demo page already at /currency-rates/'
+	fi
+fi
+
 # ------------------------------------------------------------ config checks ---
 # Config::apply() only defines constants at runtime, so `wp config get` cannot
 # see them. Asserting through `wp eval` proves the config actually loaded.

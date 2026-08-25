@@ -28,15 +28,22 @@ That is the whole setup. There is no `.env` to copy first: `bin/bootstrap.sh` cr
 `.env.example` and generates eight unique keys and salts into it on the first run.
 
 `make bootstrap` installs dependencies, starts the containers, installs WordPress, activates the
-theme, verifies the configuration and prints the URL and credentials. It is idempotent — running it
-again changes nothing and reinstalls nothing.
+theme **and the currency module**, publishes the demo page below, verifies the configuration and
+prints the URL and credentials. It is idempotent — running it again changes nothing and reinstalls
+nothing.
 
 | | |
 |---|---|
 | Site | http://localhost:8080 |
+| **Converter — start here** | **http://localhost:8080/currency-rates/** |
 | Admin | http://localhost:8080/wp/wp-admin |
-| Rates page | http://localhost:8080/wp/wp-admin/admin.php?page=currency-rates |
+| Rates page (admin) | http://localhost:8080/wp/wp-admin/admin.php?page=currency-rates |
+| Settings (admin) | http://localhost:8080/wp/wp-admin/admin.php?page=currency-settings |
 | User / password | `admin` / `admin` |
+
+**http://localhost:8080/currency-rates/ is the page to open first.** It carries the block described
+below: a live converter over the stored rates, and the full rate table under it. `make bootstrap`
+publishes it, so it is there on a clean clone.
 
 The admin lives under `/wp/`, not at `/wp-admin` — that is Bedrock's layout, and a bookmark from a
 stock WordPress site will 404.
@@ -104,14 +111,37 @@ Add `--format=csv`, `--format=json` or `--format=count` to either `list` command
 - **Settings** — API key status (presence and last four characters only, never the value), last
   sync time, and an "Update now" button.
 
+### Block — `Currency Rates`
+
+The front end of the module, and what http://localhost:8080/currency-rates/ shows. Insert it from
+the block inserter under **Widgets → Currency Rates**, or write it directly:
+
+```
+<!-- wp:currency-converter/rates /-->
+```
+
+It renders a converter — amount, from, to, result — and the stored rate table beneath it. The
+sidebar controls the base currency, how many rows to show, and whether the converter, the table and
+the freshness line each appear.
+
+Two things about it are deliberate:
+
+- **It is a dynamic block.** Nothing is saved into post content, so the rates a visitor sees are the
+  ones in the database today rather than the ones there when somebody last opened the editor.
+- **The browser never does the arithmetic.** The converter asks
+  `GET /wp-json/currency-converter/v1/convert`, which runs the same `bcmath` path as the CLI.
+  JavaScript has one number type and it is a float; the module exists because floats lose money.
+  The endpoint is public and read-only, and never reaches freecurrencyapi.com — it cannot spend
+  quota.
+
 ### Shortcode
 
 ```
 [currency_convert amount="123" from="USD" to="RUB"]
 ```
 
-Twenty lines, three attributes, one `convert()` call — it exists to prove the service works outside
-wp-admin, not as a front-end feature.
+Renders `$123.00 = ₽10,182.68` — both sides in their own currency's symbol and decimal places, so
+a yen amount shows none. For a converter a reader can drive, use the block above.
 
 ## Everyday commands
 
